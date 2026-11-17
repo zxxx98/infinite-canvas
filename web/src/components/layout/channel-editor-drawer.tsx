@@ -1,9 +1,8 @@
 import { Button, Drawer, Input, Segmented, Select, Space } from "antd";
-import { ListPlus, Sparkles, Trash2 } from "lucide-react";
+import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { applyPipiwangChannelPreset } from "@/lib/pipiwang-image-script";
 import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
@@ -89,14 +88,9 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                     <div className="text-sm font-semibold">{t("config.channelEditor.models")}</div>
                     <div className="mt-0.5 text-xs text-stone-500">{t("config.channelEditor.modelDescription", { count: draft.models.length })}</div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <Button icon={<Sparkles className="size-4" />} onClick={() => setDraft((current) => (current ? applyPipiwangChannelPreset(current) : current))}>
-                        皮皮智绘预设
-                    </Button>
-                    <Button type="primary" icon={<ListPlus className="size-4" />} onClick={() => setSelectOpen(true)}>
-                        {t("config.channelEditor.selectModels")}
-                    </Button>
-                </div>
+                <Button type="primary" icon={<ListPlus className="size-4" />} onClick={() => setSelectOpen(true)}>
+                    {t("config.channelEditor.selectModels")}
+                </Button>
             </div>
 
             <div className="space-y-2 rounded-lg border border-stone-200 p-2 dark:border-stone-800">
