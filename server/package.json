@@ -1,0 +1,15 @@
+{
+  "name": "@basketikun/canvas-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lightweight backend server for Infinite Canvas account management and channel configuration.",
+  "type": "module",
+  "main": "./index.js",
+  "scripts": {
+    "dev": "node --no-warnings --watch index.js",
+    "start": "node --no-warnings index.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

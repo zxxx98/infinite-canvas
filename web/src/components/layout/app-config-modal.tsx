@@ -7,16 +7,19 @@ import { useTranslation } from "react-i18next";
 import { ModelPicker } from "@/components/model-picker";
 import { videoResolutionOptions } from "@/components/video-settings-panel";
 import { ChannelEditorDrawer } from "@/components/layout/channel-editor-drawer";
+import { ConfigAdminUsers } from "@/components/layout/config-admin-users";
 import { ConfigLocalProxy } from "@/components/layout/config-local-proxy";
 import { ConfigPromptSources } from "@/components/layout/config-prompt-sources";
 import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
 import type { AppLocale } from "@/i18n";
+import { extractApiError, saveServerChannelsApi } from "@/services/api/auth";
 import { exportAppConfig, importAppConfig } from "@/services/config-file";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { computeMediaSize, inferMediaRatio, inferMediaScale, mediaScaleOptions, parseVideoResolution } from "@/lib/media-size";
 import { createModelChannel, modelOptionsFromChannels, normalizeModelOptionValue, selectableModelsByCapability, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -53,7 +56,10 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const { message } = App.useApp();
     const { i18n, t } = useTranslation();
     const configInputRef = useRef<HTMLInputElement>(null);
-    const [activeTab, setActiveTab] = useState<ConfigTabKey>(initialTab);
+    const isAdmin = useUserStore((state) => state.user?.role === "admin");
+    const token = useUserStore((state) => state.token);
+    const resolvedInitialTab: ConfigTabKey = !isAdmin && (initialTab === "channels" || initialTab === "users") ? "preferences" : initialTab;
+    const [activeTab, setActiveTab] = useState<ConfigTabKey>(resolvedInitialTab);
     const [editingChannelId, setEditingChannelId] = useState("");
     const [testingWebdav, setTestingWebdav] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
@@ -70,7 +76,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
     const locale = i18n.resolvedLanguage as AppLocale;
     const imageResolutionOptions = mediaScaleOptions.map((value) => ({ value, label: value === "auto" ? t("settingsPanels.common.auto") : value.toUpperCase() }));
-    useEffect(() => setActiveTab(initialTab), [initialTab]);
+    useEffect(() => setActiveTab(resolvedInitialTab), [resolvedInitialTab]);
 
     const saveConfig = (nextConfig: AiConfig) => {
         (Object.keys(nextConfig) as Array<keyof AiConfig>).forEach((key) => updateConfig(key, nextConfig[key]));
@@ -85,8 +91,14 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     };
 
     const loadConfigFile = async (file: File) => {
+        const previousChannels = config.channels;
         try {
             await importAppConfig(file);
+            if (isAdmin && token) {
+                await saveServerChannelsApi(token, useConfigStore.getState().config.channels);
+            } else {
+                saveConfig(withChannels(useConfigStore.getState().config, previousChannels));
+            }
             message.success(t("config.imported"));
         } catch (error) {
             message.error(error instanceof Error ? error.message : t("config.importFailed"));
@@ -95,7 +107,12 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         }
     };
 
-    const updateChannels = (channels: ModelChannel[]) => saveConfig(withChannels(config, channels));
+    const updateChannels = (channels: ModelChannel[]) => {
+        saveConfig(withChannels(config, channels));
+        if (isAdmin && token) {
+            void saveServerChannelsApi(token, channels).catch((error) => message.error(extractApiError(error, "同步渠道配置到服务端失败")));
+        }
+    };
 
     const addChannel = () => {
         const channel = createModelChannel({ name: t("config.channels.numberedName", { count: config.channels.length + 1 }) });
@@ -183,38 +200,47 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                 activeKey={activeTab}
                 onChange={(key) => setActiveTab(key as ConfigTabKey)}
                 items={[
-                    {
-                        key: "channels",
-                        label: t("config.tabs.channels"),
-                        children: (
-                            <div>
-                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                                    <div className="text-xs text-stone-500">{t("config.channels.description")}</div>
-                                    <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
-                                        {t("config.channels.add")}
-                                    </Button>
-                                </div>
-                                <div className="space-y-2">
-                                    {config.channels.map((channel) => (
-                                        <div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-4 py-3 dark:border-stone-800">
-                                            <div className="min-w-0">
-                                                <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
-                                                <div className="mt-1 truncate text-xs text-stone-500">
-                                                    {apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
-                                                </div>
-                                            </div>
-                                            <div className="flex shrink-0 gap-2">
-                                                <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
-                                                    {t("common.edit")}
-                                                </Button>
-                                                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ),
-                    },
+                    ...(isAdmin
+                        ? [
+                              {
+                                  key: "channels",
+                                  label: t("config.tabs.channels"),
+                                  children: (
+                                      <div>
+                                          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                              <div className="text-xs text-stone-500">{t("config.channels.description")}</div>
+                                              <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
+                                                  {t("config.channels.add")}
+                                              </Button>
+                                          </div>
+                                          <div className="space-y-2">
+                                              {config.channels.map((channel) => (
+                                                  <div key={channel.id} className="flex items-center justify-between gap-3 rounded-lg border border-stone-200 px-4 py-3 dark:border-stone-800">
+                                                      <div className="min-w-0">
+                                                          <div className="truncate text-sm font-semibold">{channel.name || t("config.channels.unnamed")}</div>
+                                                          <div className="mt-1 truncate text-xs text-stone-500">
+                                                              {apiFormatLabel(channel.apiFormat)} · {t("config.channels.modelCount", { count: channel.models.length })} · {channel.baseUrl || t("config.channels.missingUrl")}
+                                                          </div>
+                                                      </div>
+                                                      <div className="flex shrink-0 gap-2">
+                                                          <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => setEditingChannelId(channel.id)}>
+                                                              {t("common.edit")}
+                                                          </Button>
+                                                          <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={() => deleteChannel(channel.id)} />
+                                                      </div>
+                                                  </div>
+                                              ))}
+                                          </div>
+                                      </div>
+                                  ),
+                              },
+                              {
+                                  key: "users",
+                                  label: "账号管理",
+                                  children: <ConfigAdminUsers />,
+                              },
+                          ]
+                        : []),
                     {
                         key: "local-proxy",
                         label: t("config.tabs.localProxy"),
