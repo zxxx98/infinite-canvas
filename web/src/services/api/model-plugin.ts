@@ -1,6 +1,7 @@
 import axios, { type AxiosRequestConfig } from "axios";
 
 import i18n from "@/i18n";
+import { PIPIWANG_IMAGE_SCRIPT } from "@/lib/pipiwang-image-script";
 import { buildApiUrl, withLocalProxy, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
 
 type RequestOptions = { signal?: AbortSignal };
@@ -226,6 +227,10 @@ export type PluginTemplate = { label: string; script: string };
 export function getPluginTemplates(): Record<ModelCapability, PluginTemplate[]> {
     return {
     image: [
+        {
+            label: "皮皮智绘",
+            script: PIPIWANG_IMAGE_SCRIPT,
+        },
         {
             label: i18n.t("modelPlugin.templates.openai"),
             script: `/**
