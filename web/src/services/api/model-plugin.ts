@@ -1,7 +1,8 @@
 import axios, { type AxiosRequestConfig } from "axios";
 
 import i18n from "@/i18n";
-import { buildApiUrl, withLocalProxy, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { buildApiUrl, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { channelAxios, channelUrl } from "./channel-transport";
 
 type RequestOptions = { signal?: AbortSignal };
 
@@ -40,16 +41,15 @@ function pluginHeaders(extra?: Record<string, string>, hasJsonBody = false): Rec
 }
 
 function pluginUrl(config: AiConfig, path: string) {
-    if (/^https?:/i.test(path)) return withLocalProxy(path);
+    if (/^https?:/i.test(path)) return path;
     return buildApiUrl(config.baseUrl, path.startsWith("/") ? path : `/${path}`);
 }
 
 function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHttp {
     const run = async (method: "get" | "post", path: string, body: unknown, opts?: PluginHttpOptions) => {
         const isForm = typeof FormData !== "undefined" && body instanceof FormData;
-        const response = await axios.request({
+        const response = await channelAxios(config, pluginUrl(config, path), {
             method,
-            url: pluginUrl(config, path),
             data: method === "post" ? body : undefined,
             params: opts?.params,
             headers: pluginHeaders({ Authorization: `Bearer ${config.apiKey}`, ...opts?.headers }, method === "post" && !isForm && body !== undefined),
@@ -59,7 +59,7 @@ function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHtt
         return response.data;
     };
     return {
-        url: (path) => pluginUrl(config, path),
+        url: (path) => channelUrl(config, pluginUrl(config, path)),
         post: (path, body, opts) => run("post", path, body, opts),
         get: (path, opts) => run("get", path, undefined, opts),
     };
@@ -68,7 +68,7 @@ function createPluginHttp(config: AiConfig, options?: RequestOptions): PluginHtt
 /** Raw request with no automatic auth header — the script controls method, url, headers, body entirely. */
 function createPluginRequest(config: AiConfig, options?: RequestOptions) {
     return async (requestConfig: AxiosRequestConfig & { url: string }) => {
-        const response = await axios.request({ ...requestConfig, url: pluginUrl(config, requestConfig.url), signal: options?.signal });
+        const response = await channelAxios(config, pluginUrl(config, requestConfig.url), { ...requestConfig, signal: options?.signal });
         return response.data;
     };
 }

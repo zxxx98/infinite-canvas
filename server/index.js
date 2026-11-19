@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { dirname, extname, join, normalize, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { proxyChannel } from "./channel-proxy.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3001);
@@ -152,8 +153,7 @@ function readJsonBody(req) {
     });
 }
 
-function requireUser(req, res) {
-    const header = req.headers.authorization || "";
+function requireUser(req, res, header = req.headers.authorization || "") {
     const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
     const user = verifyToken(token);
     if (!user) {
@@ -183,8 +183,14 @@ function readChannels() {
     }
 }
 
-async function handleApi(req, res, pathname) {
+async function handleApi(req, res, url) {
+    const { pathname } = url;
     const method = req.method || "GET";
+
+    if (pathname.startsWith("/api/proxy/")) {
+        if (!requireUser(req, res, req.headers["x-canvas-proxy-authorization"] || "")) return;
+        return proxyChannel(req, res, url, readChannels(), sendJson);
+    }
 
     if (method === "POST" && pathname === "/api/auth/login") {
         const body = await readJsonBody(req);
@@ -376,7 +382,7 @@ function serveStatic(req, res, pathname) {
 const server = createServer((req, res) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     if (url.pathname.startsWith("/api/")) {
-        handleApi(req, res, url.pathname).catch((error) => {
+        handleApi(req, res, url).catch((error) => {
             const message = error instanceof Error ? error.message : "服务器内部错误";
             if (!res.headersSent) sendJson(res, 500, { message });
         });

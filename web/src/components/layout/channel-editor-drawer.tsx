@@ -3,7 +3,7 @@ import { ListPlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
+import { defaultBaseUrlForApiFormat, guessCapability, normalizeChannelModels, type ApiCallFormat, type ChannelModel, type ChannelRequestMode, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
 import { ModelScriptEditor } from "./model-script-editor";
 import { ModelSelectModal } from "./model-select-modal";
 
@@ -77,9 +77,19 @@ export function ChannelEditorDrawer({ open, channel, onSave, onClose }: { open: 
                     <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.baseUrl")}</span>
                     <Input value={draft.baseUrl} onChange={(event) => patch({ baseUrl: event.target.value })} placeholder="https://api.example.com" />
                 </label>
-                <label className="block md:col-span-2">
+                <label className="block">
                     <span className="mb-1 block text-sm font-medium">API Key</span>
                     <Input.Password value={draft.apiKey} onChange={(event) => patch({ apiKey: event.target.value })} placeholder="sk-..." />
+                </label>
+                <label className="block">
+                    <span className="mb-1 block text-sm font-medium">{t("config.channelEditor.requestMode")}</span>
+                    <Select<ChannelRequestMode>
+                        className="w-full"
+                        value={draft.requestMode ?? "default"}
+                        options={(["default", "direct", "local", "server"] as const).map((value) => ({ value, label: t(`config.channelEditor.requestModes.${value}`) }))}
+                        onChange={(requestMode) => patch({ requestMode })}
+                    />
+                    {draft.requestMode === "server" && <span className="mt-1 block text-xs text-stone-500">{t("config.channelEditor.serverProxyHint")}</span>}
                 </label>
             </div>
 
